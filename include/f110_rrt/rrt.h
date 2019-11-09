@@ -26,12 +26,20 @@
 #include <random>
 
 /// Struct defining the Node object in the RRT tree.
-struct Node {
-    double x, y;
+struct Node
+{
+    double x;
+    double y;
     double cost;
     int index;
     int parent_index;
     bool is_root = false;
+};
+
+struct Point
+{
+    double x;
+    double y;
 };
 
 /// RRT Class used for searching across the graph
@@ -42,25 +50,27 @@ public:
 private:
     ros::NodeHandle nh_;
 
-    // ros pub/sub
-    // TODO: add the publishers and subscribers you need
-
-    ros::Subscriber pf_sub_;
+    ros::Subscriber map_sub_;
+    ros::Subscriber pose_sub_;
     ros::Subscriber scan_sub_;
+    ros::Publisher drive_pub_;
+    ros::Publisher dynamic_map_pub_;
 
-    // tf stuff
-    tf::TransformListener listener;
-
-    // TODO: create RRT params
+    tf::TransformListener listener_;
+    tf::StampedTransform tf_base_link_to_map_;
 
     // random generator, use this
     std::mt19937 gen;
     std::uniform_real_distribution<> x_dist;
     std::uniform_real_distribution<> y_dist;
 
+    nav_msgs::OccupancyGrid input_map_;
+    int map_rows_;
+    int map_cols_;
+
     /// The pose callback when subscribed to particle filter's inferred pose (RRT Main Loop)
     /// @param pose_msg - pointer to the incoming pose message
-    void pf_callback(const geometry_msgs::PoseStamped::ConstPtr& pose_msg);
+    void pose_callback(const geometry_msgs::PoseStamped::ConstPtr& pose_msg);
 
     /// The scan callback, update your occupancy grid here
     /// @param scan_msg - pointer to the incoming scan message

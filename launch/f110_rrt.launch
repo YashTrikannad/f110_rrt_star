@@ -1,7 +1,5 @@
 <launch>
 
-    <include file="$(find f110_rrt)/launch/f110_rrt.launch"/>
-
     <rosparam command="load" file="$(find f110_rrt)/config/config.yaml" />
     <env name="ROSCONSOLE_CONFIG_FILE" value="$(find f110_rrt)/config/rosconsole_config.conf"/>
 
