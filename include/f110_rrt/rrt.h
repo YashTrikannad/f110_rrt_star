@@ -65,8 +65,10 @@ private:
     std::uniform_real_distribution<> y_dist;
 
     nav_msgs::OccupancyGrid input_map_;
-    int map_rows_;
     int map_cols_;
+
+    std::vector<size_t > new_obstacles_;
+    int clear_obstacles_count_;
 
     /// The pose callback when subscribed to particle filter's inferred pose (RRT Main Loop)
     /// @param pose_msg - pointer to the incoming pose message

@@ -23,8 +23,10 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())())
     scan_sub_ = nh_.subscribe(scan_topic, 10, &RRT::scan_callback, this);
     dynamic_map_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>("dynamic_map", 1);
 
-    map_rows_ = input_map_.info.height;
     map_cols_ = input_map_.info.width;
+    new_obstacles_ = {};
+    new_obstacles_.reserve(2000);
+    clear_obstacles_count_ = 0;
 
     ROS_INFO("Created new RRT Object.");
 }
@@ -33,7 +35,6 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())())
 /// @param scan_msg - pointer to the incoming scan message
 void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
 {
-    ROS_INFO("Scan Callback Activated");
     try
     {
         listener_.lookupTransform("/map", "/laser", ros::Time(0), tf_base_link_to_map_);
@@ -46,57 +47,54 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
     const auto translation = tf_base_link_to_map_.getOrigin();
     const double yaw = tf::getYaw(tf_base_link_to_map_.getRotation());
 
-    const auto start = static_cast<int>(scan_msg->ranges.size()/4);
-    const auto end = static_cast<int>(3*scan_msg->ranges.size()/4);
-    const auto angle_increment = scan_msg->angle_increment;
-    double theta = angle_increment*start;
+    const auto start = static_cast<int>(scan_msg->ranges.size()/3);
+    const auto end = static_cast<int>(2*scan_msg->ranges.size()/3);
+    const double angle_increment = scan_msg->angle_increment;
+    double theta = scan_msg->angle_min + angle_increment*(start-1);
 
-    std::vector<size_t > new_index_vector;
     for(int i=start; i<end; ++i)
     {
+        theta+=angle_increment;
+
         const double hit_range = scan_msg->ranges[i];
-        if(std::isinf(hit_range) || std::isnan(hit_range))
-        {
-            theta+=angle_increment;
-            continue;
-        }
+        if(std::isinf(hit_range) || std::isnan(hit_range)) continue;
 
         const double x_base_link = hit_range*cos(theta);
         const double y_base_link = hit_range*sin(theta);
 
-        std::cout << "x_base_link: " << x_base_link << " ";
-        std::cout << "y_base_link: " << y_base_link << " ";;
+        if(x_base_link > 5 || y_base_link > 2) continue;
 
         const double x_map = x_base_link*cos(yaw) - y_base_link*sin(yaw) + translation.getX();
-        const double y_map = y_base_link*sin(yaw) - x_base_link*cos(yaw) + translation.getY();
-
-        std::cout << "x_map: " << x_map << " ";
-        std::cout << "y_map: " << y_map << " ";
+        const double y_map = x_base_link*sin(yaw) + y_base_link*cos(yaw) + translation.getY();
 
         const double x_map_top_left = x_map - input_map_.info.origin.position.x;
         const double y_map_top_left = y_map - input_map_.info.origin.position.y;
 
-        std::cout << "x_map wrt top left: " << x_map_top_left << " ";
-        std::cout << "y_map wrt top left: " << y_map_top_left << "\n  ";
+        const auto x_index = static_cast<int>(x_map_top_left/input_map_.info.resolution);
+        const auto y_index = static_cast<int>(y_map_top_left/input_map_.info.resolution);
 
-        const int x_index = static_cast<int>(x_map_top_left/input_map_.info.resolution);
-        const int y_index = static_cast<int>(y_map_top_left/input_map_.info.resolution);
+        const size_t index = y_index*map_cols_ + x_index;
+        if(input_map_.data[index] != 100)
+        {
+            input_map_.data[index] = 100;
+            new_obstacles_.emplace_back(index);
+        }
+    }
 
-        std::cout << "x_index: " << x_index << " ";
-        std::cout << "y_index: " << y_index << " ";
-
-        const size_t index = x_index*map_cols_ + y_index;
-        input_map_.data[index] = 100;
-        new_index_vector.emplace_back(index);
-
-        std::cout << "Row Major Index: " << index << "\n";
-
-        theta+=angle_increment;
+    clear_obstacles_count_++;
+    if(clear_obstacles_count_ > 5)
+    {
+        for(const auto index: new_obstacles_)
+        {
+            input_map_.data[index] = 0;
+        }
+        new_obstacles_.clear();
+        clear_obstacles_count_ = 0;
+        ROS_DEBUG("Obstacles Cleared");
     }
 
     dynamic_map_pub_.publish(input_map_);
-    sleep(2);
-    ROS_INFO("Map Published");
+    ROS_DEBUG("Map Updated");
 }
 
 /// The pose callback when subscribed to particle filter's inferred pose (RRT Main Loop)
