@@ -1,6 +1,14 @@
-// This file contains the class definition of tree nodes and RRT
+// This file contains the class definition of RRT
+
 #include "f110_rrt/rrt.h"
 #include "f110_rrt/csv_reader.h"
+
+#include <visualization_msgs/Marker.h>
+
+#include <thread>
+#include <chrono>
+
+static const bool debug = true;
 
 /// RRT Object Constructor
 /// @param nh - node handle to the ros node
@@ -22,14 +30,50 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     ROS_INFO("Map Load Successful.");
 
     // Read Global Path
-    f110::CSVReader reader("$(find f110_rrt)/sensor_data/gtpose.csv");
+    f110::CSVReader reader("/home/yash/yasht_ws/src/f110_rrt/sensor_data/gtpose_fast.csv");
     global_path_ = reader.getData();
 
+    // get transform from laser to map
+    try
+    {
+        tf_laser_to_map_ = tf_buffer_.lookupTransform("map", "laser", ros::Time(0));
+    }
+    catch (tf::TransformException& ex)
+    {
+        ROS_ERROR("%s",ex.what());
+        ros::Duration(1.0).sleep();
+    }
+
     // ROS Publishers and Subscribers
-    drive_pub_ = nh_.advertise<ackermann_msgs::AckermannDriveStamped>(drive_topic, 1);
-    pose_sub_ = nh_.subscribe(pose_topic, 1, &RRT::pose_callback, this);
-    scan_sub_ = nh_.subscribe(scan_topic, 10, &RRT::scan_callback, this);
     dynamic_map_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>("dynamic_map", 1);
+    waypoint_viz_pub_ = nh_.advertise<visualization_msgs::Marker>("waypoint_viz_marker", 1000);
+
+    scan_sub_ = nh_.subscribe(scan_topic, 10, &RRT::scan_callback, this);
+    sleep(1);
+    pose_sub_ = nh_.subscribe(pose_topic, 1, &RRT::pose_callback, this);
+    drive_pub_ = nh_.advertise<ackermann_msgs::AckermannDriveStamped>(drive_topic, 10);
+    tree_viz_pub_ = nh_.advertise<visualization_msgs::Marker>("tree_viz_marker", 10);
+
+    // Tree Visualization
+    points_.header.frame_id = line_list_.header.frame_id = "/map";
+    points_.header.stamp = line_list_.header.stamp = ros::Time::now();
+    points_.ns = "rrt_viz";
+    points_.action = line_list_.action = visualization_msgs::Marker::ADD;
+    points_.pose.orientation.w = line_list_.pose.orientation.w = 1.0;
+    points_.id = 0;
+    line_list_.id = 2;
+    points_.type = visualization_msgs::Marker::POINTS;
+    line_list_.type = visualization_msgs::Marker::LINE_LIST;
+    points_.scale.x = 0.2;
+    points_.scale.y = 0.2;
+    line_list_.scale.x = 0.1;
+    points_.color.g = 1.0f;
+    points_.color.a = 1.0;
+    line_list_.color.r = 1.0;
+    line_list_.color.a = 1.0;
+
+    // Waypoint Visualization
+    unique_id_ = 0;
 
     // Map Data
     map_cols_ = input_map_.info.width;
@@ -47,6 +91,11 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     nh_.getParam("lookahead_distance", lookahead_distance_);
     nh_.getParam("local_lookahead_distance", local_lookahead_distance_);
 
+    // Car Parameters
+    nh_.getParam("high_speed", high_speed_);
+    nh_.getParam("medium_speed", medium_speed_);
+    nh_.getParam("low_speed", low_speed_);
+
     ROS_INFO("Created new RRT Object.");
 }
 
@@ -56,15 +105,15 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
 {
     try
     {
-        listener_.lookupTransform("/map", "/laser", ros::Time(0), tf_base_link_to_map_);
+        tf_laser_to_map_ = tf_buffer_.lookupTransform("map", "laser", ros::Time(0));
     }
     catch (tf::TransformException& ex)
     {
         ROS_ERROR("%s",ex.what());
-        ros::Duration(1.0).sleep();
+        ros::Duration(0.1).sleep();
     }
-    const auto translation = tf_base_link_to_map_.getOrigin();
-    const double yaw = tf::getYaw(tf_base_link_to_map_.getRotation());
+    const auto translation = tf_laser_to_map_.transform.translation;
+    const double yaw = tf::getYaw(tf_laser_to_map_.transform.rotation);
 
     const auto start = static_cast<int>(scan_msg->ranges.size()/3);
     const auto end = static_cast<int>(2*scan_msg->ranges.size()/3);
@@ -83,8 +132,8 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
 
         if(x_base_link > 5 || y_base_link > 2) continue;
 
-        const double x_map = x_base_link*cos(yaw) - y_base_link*sin(yaw) + translation.getX();
-        const double y_map = x_base_link*sin(yaw) + y_base_link*cos(yaw) + translation.getY();
+        const double x_map = x_base_link*cos(yaw) - y_base_link*sin(yaw) + translation.x;
+        const double y_map = x_base_link*sin(yaw) + y_base_link*cos(yaw) + translation.y;
 
         const auto index = get_row_major_index(x_map, y_map);
 
@@ -115,7 +164,14 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
 /// @param pose_msg - pointer to the incoming pose message
 void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
 {
+    if(unique_id_ == 0)
+    {
+        visualize_waypoint_data();
+    }
+
     const auto trackpoint = get_best_global_trackpoint({pose_msg->pose.position.x,pose_msg->pose.position.y});
+
+    std::cout << "Global Trackpoint: " << trackpoint[0] << " " << trackpoint[1] << std::endl;
 
     std::vector<Node> tree;
 
@@ -128,23 +184,40 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
 
         // Sample a Node
         const auto sample_node = sample();
+//
+//        std::cout << "sample node: " << sample_node[0] << " " << sample_node[1] << std::endl;
 
         // Check if it is not occupied
-        if(is_collided(sample_node[0], sample_node[1])) continue;
+        if(is_collided(sample_node[0], sample_node[1]))
+        {
+            ROS_DEBUG("Sample Node Colliding");
+            continue;
+        }
 
         // Find the nearest node in the tree to the sample node
         const int nearest_node_id = nearest(tree, sample_node);
 
+//        std::cout << "Nearest Node id" << nearest_node_id;
+//        std::cout << "Nearest Node " << tree[nearest_node_id].x << " " << tree[nearest_node_id].y << "\n";
+
         // Steer the tree from the nearest node towards the sample node
         const Node new_node = steer(tree[nearest_node_id], nearest_node_id, sample_node);
+//        std::cout << "New Node: " << new_node.x << " " << new_node.y << " " << new_node.parent_index << "\n";
 
         // Check if the segment joining the two nodes is in collision
-        if(is_collided(tree[nearest_node_id], new_node)) continue;
-
+        if(is_collided(tree[nearest_node_id], new_node))
+        {
+            ROS_DEBUG("Sample Node Edge Colliding");
+            continue;
+        }
+        ROS_DEBUG("Sample Node Edge Found");
+        std::cout << "Current Pose: " << pose_msg->pose.position.x << " " << pose_msg->pose.position.y << "\n";
+        std::cout << "Current Goal TrackPoint: " << trackpoint[0] << " " << trackpoint[1] << "\n";
         if(is_goal(new_node, trackpoint[0], trackpoint[1]))
         {
             ROS_INFO("Goal reached. Backtracking ...");
             local_path_ = find_path(tree, new_node);
+            std::cout << "Local Path Size: " << local_path_.size();
             ROS_INFO("Path Found");
 
             const auto trackpoint_and_distance =
@@ -152,6 +225,9 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
 
             const auto local_trackpoint = trackpoint_and_distance.first;
             const double distance = trackpoint_and_distance.second;
+
+            std::cout << "local_trackpoint: " << local_trackpoint[0] << " " << local_trackpoint[1] << "\n";
+            std::cout << "distance: " << distance << "\n";
 
             geometry_msgs::Pose goal_way_point;
             goal_way_point.position.x = local_trackpoint[0];
@@ -163,20 +239,41 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
             goal_way_point.orientation.w = 1;
             tf2::doTransform(goal_way_point, goal_way_point, tf_map_to_laser_);
 
+            std::cout << "carframe trackpoint" << goal_way_point.position.x << " " << goal_way_point.position.y << "\n";
+
             const double steering_angle = 2*(goal_way_point.position.y)/pow(distance, 2);
 
             // Publish drive message
             ackermann_msgs::AckermannDriveStamped drive_msg;
             drive_msg.header.stamp = ros::Time::now();
             drive_msg.header.frame_id = "base_link";
-
-            // Thresholding for limiting the movement of car wheels to avoid servo locking and variable speed
-            // adjustment
             drive_msg.drive.steering_angle = steering_angle;
-            drive_msg.drive.speed = 1.0;
+            drive_msg.drive.speed = low_speed_;
 
+            std::cout << "steering_angle" << steering_angle;
+
+            drive_pub_.publish(drive_msg);
             break;
         }
+
+//        if(debug)
+//        {
+//            geometry_msgs::Point new_node_viz;
+//            new_node_viz.x = new_node.x;
+//            new_node_viz.y = new_node.y;
+//            new_node_viz.z = 0;
+//            points_.points.push_back(new_node_viz);
+//
+//            line_list_.points.push_back(new_node_viz);
+//            geometry_msgs::Point parent_node_viz;
+//            new_node_viz.x = tree[new_node.parent_index].x;
+//            new_node_viz.y = tree[new_node.parent_index].y;
+//            new_node_viz.z = 0;
+//            line_list_.points.push_back(parent_node_viz);
+//        }
+
+//        tree_viz_pub_.publish(points_);
+//        tree_viz_pub_.publish(line_list_);
 
         tree.emplace_back(new_node);
     }
@@ -187,12 +284,22 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
 /// @return - the sampled point in free space
 std::array<double, 2> RRT::sample()
 {
-    std::uniform_real_distribution<>::param_type x_param(0.0, 4.0);
-    std::uniform_real_distribution<>::param_type y_param(-0.7, 0.7);
+    std::uniform_real_distribution<>::param_type x_param(0.0, 3.0);
+    std::uniform_real_distribution<>::param_type y_param(-2.0, 2.0);
     x_dist.param(x_param);
     y_dist.param(y_param);
 
-    return {x_dist(gen), y_dist(gen)};
+    geometry_msgs::Pose sample_point;
+    sample_point.position.x = x_dist(gen);
+    sample_point.position.y = y_dist(gen);
+    sample_point.position.z = 0;
+    sample_point.orientation.x = 0;
+    sample_point.orientation.y = 0;
+    sample_point.orientation.z = 0;
+    sample_point.orientation.w = 1;
+    tf2::doTransform(sample_point, sample_point, tf_laser_to_map_);\
+
+    return {sample_point.position.x, sample_point.position.y};
 }
 
 /// This method returns the nearest node id on the tree to the sampled point
@@ -375,7 +482,7 @@ std::array<double, 2> RRT::get_best_global_trackpoint(const std::array<double, 2
 {
     try
     {
-        tf_map_to_laser_ = tf_buffer_.lookupTransform("/laser", "map", ros::Time(0));
+        tf_map_to_laser_ = tf_buffer_.lookupTransform("laser", "map", ros::Time(0));
     }
     catch (tf::TransformException& ex)
     {
@@ -416,15 +523,75 @@ std::array<double, 2> RRT::get_best_global_trackpoint(const std::array<double, 2
 /// @return trackpoint (x, y) in map frame
 std::pair<std::array<double, 2>, double> RRT::get_best_local_trackpoint(const std::array<double, 2>& current_pose)
 {
+    std::array<double, 2> closest_point{};
+    double closest_distance_to_current_pose = std::numeric_limits<double>::max();
+    double closest_distance = std::numeric_limits<double>::max();
     for(const auto& trackpoint : local_path_)
     {
         double distance = sqrt(pow(trackpoint[0] - current_pose[0], 2)
                                + pow(trackpoint[1] - current_pose[1], 2));
 
-        if(std::abs(local_lookahead_distance_ - distance) < local_trackpoint_tolerance_)
+        double diff_distance = std::abs(local_lookahead_distance_ - distance);
+        if(diff_distance < closest_distance)
+        {
+            closest_distance_to_current_pose = distance;
+            closest_distance = diff_distance;
+            closest_point = trackpoint;
+        }
+        if(diff_distance < local_trackpoint_tolerance_)
         {
             return {trackpoint, distance};
         }
     }
-    ROS_ERROR("No Local TrackPoint found within the local_trackpoint_tolerance_");
+    ROS_WARN("No Local TrackPoint found within the local_trackpoint_tolerance. Approximated the Closest Point Available");
+    return {closest_point, closest_distance_to_current_pose};
+}
+
+/// Publish way point with respect to the given input properties
+/// @param way_point - (x, y) wrt to the frame id
+/// @param frame_id - frame represented in waypoint
+/// @param r - red intensity
+/// @param g - green intensity
+/// @param b - blue intenisty
+/// @param transparency (Do not put 0)
+/// @param scale_x
+/// @param scale_y
+/// @param scale_z
+void RRT::add_way_point_visualization(const std::array<double, 2>& way_point, const std::string& frame_id, double r,
+        double g, double b, double transparency = 0.5, double scale_x=0.2, double scale_y=0.2, double scale_z=0.2)
+{
+    visualization_msgs::Marker way_point_marker;
+    way_point_marker.header.frame_id = frame_id;
+    way_point_marker.header.stamp = ros::Time();
+    way_point_marker.ns = "pure_pursuit";
+    way_point_marker.id = unique_id_;
+    way_point_marker.type = visualization_msgs::Marker::SPHERE;
+    way_point_marker.action = visualization_msgs::Marker::ADD;
+    way_point_marker.pose.position.x = way_point[0];
+    way_point_marker.pose.position.y = way_point[1];
+    way_point_marker.pose.position.z = 0;
+    way_point_marker.pose.orientation.x = 0.0;
+    way_point_marker.pose.orientation.y = 0.0;
+    way_point_marker.pose.orientation.z = 0.0;
+    way_point_marker.pose.orientation.w = 1.0;
+    way_point_marker.scale.x = 0.2;
+    way_point_marker.scale.y = 0.2;
+    way_point_marker.scale.z = 0.2;
+    way_point_marker.color.a = transparency;
+    way_point_marker.color.r = r;
+    way_point_marker.color.g = g;
+    way_point_marker.color.b = b;
+    waypoint_viz_pub_.publish(way_point_marker);
+    unique_id_++;
+}
+
+/// visualize all way points in the global path
+void RRT::visualize_waypoint_data()
+{
+    const size_t increment = global_path_.size()/100;
+    for(size_t i=0; i<global_path_.size(); i=i+increment)
+    {
+        add_way_point_visualization(global_path_[i], "map", 1.0, 0.0, 1.0, 0.5);
+    }
+    ROS_INFO("Published All Global WayPoints.");
 }

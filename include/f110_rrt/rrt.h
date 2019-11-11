@@ -12,6 +12,8 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <tf/transform_listener.h>
 #include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <visualization_msgs/Marker.h>
 
 #include <cmath>
 #include <vector>
@@ -51,10 +53,18 @@ private:
     ros::Publisher drive_pub_;
     ros::Publisher dynamic_map_pub_;
 
+    // Visualization
+    ros::Publisher tree_viz_pub_;
+    ros::Publisher waypoint_viz_pub_;
+    visualization_msgs::Marker points_;
+    visualization_msgs::Marker line_list_;
+    int unique_id_;
+
+
     tf2_ros::TransformListener tf2_listener_;
     tf2_ros::Buffer tf_buffer_;
     tf::TransformListener listener_;
-    tf::StampedTransform tf_base_link_to_map_;
+    geometry_msgs::TransformStamped tf_laser_to_map_;
     geometry_msgs::TransformStamped tf_map_to_laser_;
 
     std::mt19937 gen;
@@ -76,6 +86,11 @@ private:
     double local_trackpoint_tolerance_;
     double lookahead_distance_;
     double local_lookahead_distance_;
+
+    /// Car Parameters
+    double high_speed_;
+    double medium_speed_;
+    double low_speed_;
 
     /// Global Path
     std::vector<std::array<double, 2>> global_path_;
@@ -183,5 +198,21 @@ private:
     /// @param lookahead_distance - ideal distance to find a trackpoint ahead of the current pose
     /// @return trackpoint (x, y) in map frame
     std::pair<std::array<double, 2>, double> get_best_local_trackpoint(const std::array<double, 2>& current_pose);
+
+    ///
+    /// @param way_point
+    /// @param frame_id
+    /// @param r
+    /// @param g
+    /// @param b
+    /// @param transparency
+    /// @param scale_x
+    /// @param scale_y
+    /// @param scale_z
+    void add_way_point_visualization(const std::array<double, 2>& point, const std::string& frame_id, double r, double g,
+            double b, double transparency, double scale_x, double scale_y, double scale_z);
+
+    ///
+    void visualize_waypoint_data();
 };
 
