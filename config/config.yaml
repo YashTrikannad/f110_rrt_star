@@ -1,11 +1,43 @@
 # Topics that RRT listens to
-# TODO: add your own
-# TODO: change this to the pose topic published particle filter
-pose_topic: "some_pose_topic"
-scan_topic: "some_scan_topic"
+pose_topic: "gt_pose"
+scan_topic: "scan"
+drive_topic: "nav"
 
 # Topics that RRT publishes to
-# TODO: add your own
+
 # visualization
 
-# TODO: add Parameters for RRT
+#######
+# Parameters for RRT
+#######
+
+# Max Iterations of RRT before giving up
+max_rrt_iters: 1000
+
+# Max Value for steer between two nodes
+max_expansion_distance: 1.0 # in meters
+
+# Dicretization along edge joining two nodes in RRT
+collision_checking_points: 20
+
+# RRT Local Planner Goal Tolerance
+goal_tolerance: 0.5 # in meters
+
+# Lookahead Distance for tracking reference of local planner (RRT)
+lookahead_distance: 1.0 # in meters
+
+# Lookahead Distance for tracking reference of local planner (RRT)
+local_lookahead_distance: 1.0 # in meters
+
+# Tolerance along the global plan while choosing points according to the lookahead distance
+local_trackpoint_tolerance: 0.01 # in meters
+
+#######
+# Parameters for Car
+#######
+
+# Speed Variations
+high_speed: 3.0
+moderate_speed: 2.0
+low_speed: 1.0
+
