@@ -12,35 +12,32 @@ drive_topic: "nav"
 #######
 
 # Max Iterations of RRT before giving up
-max_rrt_iters: 10000
+max_rrt_iters: 1000
 
 # Max Value for steer between two nodes
 max_expansion_distance: 1.0 # in meters
 
 # Dicretization along edge joining two nodes in RRT
-collision_checking_points: 10
+collision_checking_points: 20
 
 # RRT Local Planner Goal Tolerance
 goal_tolerance: 0.5 # in meters
 
 # Lookahead Distance for tracking reference of local planner (RRT)
-lookahead_distance: 3.0 # in meters
+lookahead_distance: 1.0 # in meters
 
 # Lookahead Distance for tracking reference of local planner (RRT)
 local_lookahead_distance: 1.0 # in meters
 
 # Tolerance along the global plan while choosing points according to the lookahead distance
-global_trackpoint_tolerance: 0.01 # in meters
-
-# Tolerance along the global plan while choosing points according to the lookahead distance
-local_trackpoint_tolerance: 0.05 # in meters
+local_trackpoint_tolerance: 0.01 # in meters
 
 #######
 # Parameters for Car
 #######
 
 # Speed Variations
-high_speed: 1.0
-moderate_speed: 0.5
-low_speed: 0.2
+high_speed: 3.0
+moderate_speed: 2.0
+low_speed: 1.0
 

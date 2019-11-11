@@ -57,7 +57,7 @@ private:
     ros::Publisher tree_viz_pub_;
     ros::Publisher waypoint_viz_pub_;
     visualization_msgs::Marker points_;
-    visualization_msgs::Marker line_list_;
+    visualization_msgs::Marker line_strip_;
     int unique_id_;
 
 
@@ -82,7 +82,6 @@ private:
     double max_expansion_distance_;
     int collision_checking_points_;
     double goal_tolerance_;
-    double global_trackpoint_tolerance_;
     double local_trackpoint_tolerance_;
     double lookahead_distance_;
     double local_lookahead_distance_;
@@ -157,19 +156,22 @@ private:
 
     /// RRT* methods
 
+    /// (Not Implemented)
     /// This method returns the cost associated with a node
     /// @param tree - the current tree
     /// @param node - the node the cost is calculated for
     /// @return - the cost value associated with the node
     double cost(std::vector<Node> &tree, Node &node);
 
-    /// This method returns the cost of the straight line path between two nodes
+    /// (Not Implemented)
+    /// This method returns the cost of the straight line path between two nodes (Not Implemented)
     /// @param n1 - the Node at one end of the path
     /// @param n2 - the Node at the other end of the path
     /// @return - the cost value associated with the path
     double line_cost(Node &n1, Node &n2);
 
-    /// This method returns the set of Nodes in the neighborhood of a node.
+    /// (Not Implemented)
+    /// This method returns the set of Nodes in the neighborhood of a node. (Not Implemented)
     /// @param tree - the current tree
     /// @param node - the node to find the neighborhood for
     /// @return - the index of the nodes in the neighborhood
@@ -181,11 +183,15 @@ private:
     /// @return true if the point is colliding with an obstacle
     bool is_collided(double x_map, double y_map);
 
+    /// Map Manipulations
+
     /// Returns the row major index for the map
     /// @param x_map - x coordinates in map frame
     /// @param y_map - y coordinates in map frame
     /// @return row major index of the map
     int get_row_major_index(double x, double y);
+
+    /// Path Tracking
 
     /// Returns the best way point from the global plan to track
     /// @param current_pose - current pose (x, y) of the car in map frame
@@ -199,20 +205,27 @@ private:
     /// @return trackpoint (x, y) in map frame
     std::pair<std::array<double, 2>, double> get_best_local_trackpoint(const std::array<double, 2>& current_pose);
 
-    ///
-    /// @param way_point
-    /// @param frame_id
-    /// @param r
-    /// @param g
-    /// @param b
-    /// @param transparency
+    /// Returns the appropriate speed based on the steering angle
+    /// @param steering_angle
+    /// @return
+    std::pair<double, double> get_corrected_speed_and_steering(double steering_angle);
+
+    /// Visualization
+
+    /// Publish way point with respect to the given input properties
+    /// @param way_point - (x, y) wrt to the frame id
+    /// @param frame_id - frame represented in waypoint
+    /// @param r - red intensity
+    /// @param g - green intensity
+    /// @param b - blue intenisty
+    /// @param transparency (Do not put 0)
     /// @param scale_x
     /// @param scale_y
     /// @param scale_z
     void add_way_point_visualization(const std::array<double, 2>& point, const std::string& frame_id, double r, double g,
             double b, double transparency, double scale_x, double scale_y, double scale_z);
 
-    ///
+    /// visualize all way points in the global path
     void visualize_waypoint_data();
 };
 
