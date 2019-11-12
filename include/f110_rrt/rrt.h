@@ -48,19 +48,20 @@ public:
 private:
     ros::NodeHandle nh_;
 
+    /// Publisher and Subscribers
     ros::Subscriber pose_sub_;
     ros::Subscriber scan_sub_;
     ros::Publisher drive_pub_;
     ros::Publisher dynamic_map_pub_;
 
-    // Visualization
+    /// Visualization
     ros::Publisher tree_viz_pub_;
     ros::Publisher waypoint_viz_pub_;
     visualization_msgs::Marker points_;
     visualization_msgs::Marker line_strip_;
     int unique_id_;
 
-
+    /// Transformations
     tf2_ros::TransformListener tf2_listener_;
     tf2_ros::Buffer tf_buffer_;
     tf::TransformListener listener_;
@@ -71,9 +72,9 @@ private:
     std::uniform_real_distribution<> x_dist;
     std::uniform_real_distribution<> y_dist;
 
+    /// Map
     nav_msgs::OccupancyGrid input_map_;
     int map_cols_;
-
     std::vector<size_t > new_obstacles_;
     int clear_obstacles_count_;
 
@@ -91,13 +92,17 @@ private:
     double medium_speed_;
     double low_speed_;
 
+    /// Pose (Map Frame)
+    double current_x_;
+    double current_y_;
+
     /// Global Path
     std::vector<std::array<double, 2>> global_path_;
     std::vector<std::array<double, 2>> local_path_;
 
-    /// Track Points
-    double trackpoint_x;
-    double trackpoint_y;
+    /// Local Map Size for Obstacle Inflation
+    double length_local_map_;
+    double width_local_map_;
 
     /// The pose callback when subscribed to particle filter's inferred pose (RRT Main Loop)
     /// @param pose_msg - pointer to the incoming pose message
@@ -208,7 +213,7 @@ private:
     /// Returns the appropriate speed based on the steering angle
     /// @param steering_angle
     /// @return
-    std::pair<double, double> get_corrected_speed_and_steering(double steering_angle);
+    void publish_corrected_speed_and_steering(double steering_angle);
 
     /// Visualization
 
@@ -227,5 +232,8 @@ private:
 
     /// visualize all way points in the global path
     void visualize_waypoint_data();
+
+    /// visualize trackpoints handles the creation and deletion of trackpoints
+    void visualize_trackpoints(double x, double y, double global_x, double global_y);
 };
 

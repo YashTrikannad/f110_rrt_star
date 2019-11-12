@@ -4,6 +4,7 @@
 #include "f110_rrt/csv_reader.h"
 
 #include <visualization_msgs/Marker.h>
+#include <visualization_msgs/MarkerArray.h>
 
 #include <thread>
 #include <chrono>
@@ -48,11 +49,11 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     dynamic_map_pub_ = nh_.advertise<nav_msgs::OccupancyGrid>("dynamic_map", 1);
     waypoint_viz_pub_ = nh_.advertise<visualization_msgs::Marker>("waypoint_viz_marker", 1000);
 
-    scan_sub_ = nh_.subscribe(scan_topic, 10, &RRT::scan_callback, this);
+    scan_sub_ = nh_.subscribe(scan_topic, 1, &RRT::scan_callback, this);
     sleep(1);
     pose_sub_ = nh_.subscribe(pose_topic, 1, &RRT::pose_callback, this);
     drive_pub_ = nh_.advertise<ackermann_msgs::AckermannDriveStamped>(drive_topic, 10);
-    tree_viz_pub_ = nh_.advertise<visualization_msgs::Marker>("tree_viz_marker", 10);
+    tree_viz_pub_ = nh_.advertise<visualization_msgs::Marker>("tree_viz_marker", 1);
 
     // Tree Visualization
     points_.header.frame_id = line_strip_.header.frame_id = "/map";
@@ -61,10 +62,10 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     points_.id = 0;
     line_strip_.id = 1;
     points_.type = visualization_msgs::Marker::POINTS;
-    line_strip_.type = visualization_msgs::Marker::LINE_STRIP;
-    points_.scale.x = 0.2;
-    points_.scale.y = 0.2;
-    line_strip_.scale.x = 0.1;
+    line_strip_.type = visualization_msgs::Marker::LINE_LIST;
+    points_.scale.x = 0.1;
+    points_.scale.y = 0.1;
+    line_strip_.scale.x = 0.05;
     points_.color.g = 1.0f;
     points_.color.a = 1.0;
     line_strip_.color.r = 1.0;
@@ -92,6 +93,10 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     nh_.getParam("high_speed", high_speed_);
     nh_.getParam("medium_speed", medium_speed_);
     nh_.getParam("low_speed", low_speed_);
+
+    // Local Map Parameters
+    nh_.getParam("length_local_map", length_local_map_);
+    nh_.getParam("width_local_map", width_local_map_);
 
     ROS_INFO("Created new RRT Object.");
 }
@@ -153,7 +158,7 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
         ROS_DEBUG("Obstacles Cleared");
     }
 
-    dynamic_map_pub_.publish(input_map_);
+//    dynamic_map_pub_.publish(input_map_);
     ROS_DEBUG("Map Updated");
 }
 
@@ -161,14 +166,8 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
 /// @param pose_msg - pointer to the incoming pose message
 void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
 {
-    if(debug)
-    {
-        points_.action = line_strip_.action = visualization_msgs::Marker::DELETEALL;
-        tree_viz_pub_.publish(points_);
-        tree_viz_pub_.publish(line_strip_);
-        points_.header.stamp = line_strip_.header.stamp = ros::Time::now();
-        points_.action = line_strip_.action = visualization_msgs::Marker::ADD;
-    }
+    current_x_ = pose_msg->pose.position.x;
+    current_y_ = pose_msg->pose.position.y;
 
     if(unique_id_ == 0)
     {
@@ -176,8 +175,6 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
     }
 
     const auto trackpoint = get_best_global_trackpoint({pose_msg->pose.position.x,pose_msg->pose.position.y});
-
-    std::cout << "Global Trackpoint: " << trackpoint[0] << " " << trackpoint[1] << std::endl;
 
     std::vector<Node> tree;
 
@@ -213,7 +210,7 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
         ROS_DEBUG("Sample Node Edge Found");
         if(is_goal(new_node, trackpoint[0], trackpoint[1]))
         {
-            ROS_INFO("Goal reached. Backtracking ...");
+            ROS_DEBUG("Goal reached. Backtracking ...");
             local_path_ = find_path(tree, new_node);
             ROS_INFO("Path Found");
 
@@ -232,46 +229,18 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
             goal_way_point.orientation.z = 0;
             goal_way_point.orientation.w = 1;
 
-//            geometry_msgs::Point new_node_viz;
-//            new_node_viz.x = goal_way_point.position.x;
-//            new_node_viz.y = goal_way_point.position.y;
-//            new_node_viz.z = 0;
-//            line_strip_.points.push_back(new_node_viz);
-//            tree_viz_pub_.publish(line_strip_);
+            geometry_msgs::Pose goal_way_point_car_frame;
+            tf2::doTransform(goal_way_point, goal_way_point_car_frame, tf_map_to_laser_);
 
-            tf2::doTransform(goal_way_point, goal_way_point, tf_map_to_laser_);
+            const double steering_angle = 2*(goal_way_point_car_frame.position.y)/pow(distance, 2);
 
-            const double uncorrected_steering_angle = 2*(goal_way_point.position.y)/pow(distance, 2);
+            publish_corrected_speed_and_steering(steering_angle);
 
-            // Publish drive message
-            ackermann_msgs::AckermannDriveStamped drive_msg;
-            drive_msg.header.stamp = ros::Time::now();
-            drive_msg.header.frame_id = "base_link";
-            const auto speed_and_steering = get_corrected_speed_and_steering(uncorrected_steering_angle);
-            drive_msg.drive.speed = speed_and_steering.first;
-            drive_msg.drive.steering_angle = speed_and_steering.second;
+            visualize_trackpoints(goal_way_point.position.x, goal_way_point.position.y,
+                                  trackpoint[0], trackpoint[1]);
 
-            drive_pub_.publish(drive_msg);
             break;
         }
-
-//        if(debug)
-//        {
-//            geometry_msgs::Point new_node_viz;
-//            new_node_viz.x = new_node.x;
-//            new_node_viz.y = new_node.y;
-//            new_node_viz.z = 0;
-//            points_.points.push_back(new_node_viz);
-//            line_strip_.points.push_back(new_node_viz);
-//            geometry_msgs::Point parent_node_viz;
-//            new_node_viz.x = tree[new_node.parent_index].x;
-//            new_node_viz.y = tree[new_node.parent_index].y;
-//            new_node_viz.z = 0;
-//            arrows_.points.push_back(parent_node_viz);
-//        }
-
-//        tree_viz_pub_.publish(points_);
-//        tree_viz_pub_.publish(arrows_);
 
         tree.emplace_back(new_node);
     }
@@ -282,8 +251,8 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
 /// @return - the sampled point in free space
 std::array<double, 2> RRT::sample()
 {
-    std::uniform_real_distribution<>::param_type x_param(0.3, 1.3);
-    std::uniform_real_distribution<>::param_type y_param(-0.7, 0.7);
+    std::uniform_real_distribution<>::param_type x_param(0.3, 2.0);
+    std::uniform_real_distribution<>::param_type y_param(-1.5, 1.5);
     x_dist.param(x_param);
     y_dist.param(y_param);
 
@@ -558,46 +527,93 @@ void RRT::visualize_waypoint_data()
     ROS_INFO("Published All Global WayPoints.");
 }
 
+/// visualize trackpoints handles the creation and deletion of trackpoints
+void RRT::visualize_trackpoints(double x_local, double y_local, double x_global, double y_global)
+{
+    visualization_msgs::Marker line;
+
+    line.header.frame_id    = "/map";
+    line.header.stamp       = ros::Time::now();
+    line.lifetime           = ros::Duration(0.1);
+    line.id                 = 1;
+    line.ns                 = "rrt";
+    line.type               = visualization_msgs::Marker::LINE_STRIP;
+    line.action             = visualization_msgs::Marker::ADD;
+    line.pose.orientation.w = 1.0;
+    line.scale.x            = 0.05;
+    line.color.r            = 0.0f;
+    line.color.g            = 0.0f;
+    line.color.b            = 1.0f;
+    line.color.a            = 1.0f;
+
+    geometry_msgs::Point current;
+    geometry_msgs::Point local;
+    geometry_msgs::Point global;
+
+    current.x = current_x_;
+    current.y = current_y_;
+    current.z =  0;
+
+    local.x = x_local;
+    local.y = y_local;
+    local.z = 0;
+
+    global.x = x_global;
+    global.y = y_global;
+    global.z = 0;
+
+    line.points.push_back(current);
+    line.points.push_back(local);
+    line.points.push_back(global);
+
+    tree_viz_pub_.publish(line);
+    unique_id_++;
+}
+
 /// Returns the appropriate speed based on the steering angle
 /// @param steering_angle
 /// @return
-std::pair<double, double> RRT::get_corrected_speed_and_steering(double steering_angle)
+void RRT::publish_corrected_speed_and_steering(double steering_angle)
 {
-    std::pair<double, double> speed_and_steering;
-    speed_and_steering.second = steering_angle;
+    ackermann_msgs::AckermannDriveStamped drive_msg;
+    drive_msg.header.stamp = ros::Time::now();
+    drive_msg.header.frame_id = "base_link";
+
+    drive_msg.drive.steering_angle = steering_angle;
     if(steering_angle > 0.1)
     {
         if (steering_angle > 0.2)
         {
-            speed_and_steering.first = low_speed_;
+            drive_msg.drive.speed = low_speed_;
             if (steering_angle > 0.4)
             {
-                speed_and_steering.second = 0.4;
+                drive_msg.drive.steering_angle = 0.4;
             }
         }
         else
         {
-            speed_and_steering.first = medium_speed_;
+            drive_msg.drive.speed = medium_speed_;
         }
     }
     else if(steering_angle < -0.1)
     {
         if (steering_angle < -0.2)
         {
-            speed_and_steering.first = low_speed_;
+            drive_msg.drive.speed = low_speed_;
             if (steering_angle < -0.4)
             {
-                speed_and_steering.second = -0.4;
+                drive_msg.drive.steering_angle = -0.4;
             }
         }
         else
         {
-            speed_and_steering.first = medium_speed_;
+            drive_msg.drive.speed = medium_speed_;
         }
     }
     else
     {
-        speed_and_steering.first = high_speed_;
+        drive_msg.drive.speed = high_speed_;
     }
-    return speed_and_steering;
+
+    drive_pub_.publish(drive_msg);
 }
