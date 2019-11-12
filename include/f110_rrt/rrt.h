@@ -31,11 +31,12 @@ struct Node
 {
     Node() = default;
     Node(const double x, const double y, const int parent_index) :
-        x(x), y(y), parent_index(parent_index)
+        x(x), y(y), cost(0.0), parent_index(parent_index)
     {}
 
     double x;
     double y;
+    double cost;
     int parent_index;
 };
 
@@ -100,9 +101,8 @@ private:
     std::vector<std::array<double, 2>> global_path_;
     std::vector<std::array<double, 2>> local_path_;
 
-    /// Local Map Size for Obstacle Inflation
-    double length_local_map_;
-    double width_local_map_;
+    /// Near search radius for a node in the RRT* tree
+    double search_radius_;
 
     /// The pose callback when subscribed to particle filter's inferred pose (RRT Main Loop)
     /// @param pose_msg - pointer to the incoming pose message
@@ -161,26 +161,26 @@ private:
 
     /// RRT* methods
 
-    /// (Not Implemented)
     /// This method returns the cost associated with a node
     /// @param tree - the current tree
     /// @param node - the node the cost is calculated for
     /// @return - the cost value associated with the node
-    double cost(std::vector<Node> &tree, Node &node);
+    double cost(const std::vector<Node> &tree, const Node &node);
 
-    /// (Not Implemented)
     /// This method returns the cost of the straight line path between two nodes (Not Implemented)
     /// @param n1 - the Node at one end of the path
     /// @param n2 - the Node at the other end of the path
     /// @return - the cost value associated with the path
-    double line_cost(Node &n1, Node &n2);
+    double line_cost(const Node &n1, const Node &n2);
 
     /// (Not Implemented)
     /// This method returns the set of Nodes in the neighborhood of a node. (Not Implemented)
     /// @param tree - the current tree
     /// @param node - the node to find the neighborhood for
     /// @return - the index of the nodes in the neighborhood
-    std::vector<int> near(std::vector<Node> &tree, Node &node);
+    /// Can use this to increase the speed of search to log(n)
+    /// (S. Arya and D. M. Mount. Approximate range searching. Computational Geometry: Theory and Applications)
+    std::vector<int> near(const std::vector<Node> &tree, const Node &node);
 
     /// Checks if a sample in the workspace is colliding with an obstacle
     /// @param x_map - x coordinates in map frame

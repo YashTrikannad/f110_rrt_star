@@ -94,10 +94,6 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     nh_.getParam("medium_speed", medium_speed_);
     nh_.getParam("low_speed", low_speed_);
 
-    // Local Map Parameters
-    nh_.getParam("length_local_map", length_local_map_);
-    nh_.getParam("width_local_map", width_local_map_);
-
     ROS_INFO("Created new RRT Object.");
 }
 
@@ -158,7 +154,7 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
         ROS_DEBUG("Obstacles Cleared");
     }
 
-//    dynamic_map_pub_.publish(input_map_);
+    dynamic_map_pub_.publish(input_map_);
     ROS_DEBUG("Map Updated");
 }
 
@@ -388,6 +384,44 @@ bool RRT::is_collided(const double x_map, const double y_map)
 {
     const auto index = get_row_major_index(x_map, y_map);
     return input_map_.data[index] == 100;
+}
+
+/// This method returns the cost associated with a node
+/// @param tree - the current tree
+/// @param node - the node the cost is calculated for
+/// @return - the cost value associated with the node
+double RRT::cost(const std::vector<Node> &tree, const Node &node)
+{
+    return tree[node.parent_index].cost + ;
+}
+
+/// This method returns the cost of the straight line path between two nodes
+/// @param n1 - the Node at one end of the path
+/// @param n2 - the Node at the other end of the path
+/// @return - the cost value associated with the path (Euclidean Distance)
+double RRT::line_cost(const Node &n1, const Node &n2)
+{
+    return sqrt(pow(n1.x - n2.x, 2) + pow(n1.y - n2.y, 2));
+}
+
+/// This method returns the set of Nodes in the neighborhood of a node. (Not Implemented)
+/// @param tree - the current tree
+/// @param node - the node to find the neighborhood for
+/// @return - the index of the nodes in the neighborhood
+/// Can use this to increase the speed of search to log(n)
+/// (S. Arya and D. M. Mount. Approximate range searching. Computational Geometry: Theory and Applications, 17:135–163, 2000.)
+std::vector<int> RRT::near(const std::vector<Node> &tree, const Node &node)
+{
+    std::vector<int> near_neighbor_indices;
+    for(int i=0; i<tree.size(); i++)
+    {
+        const double distance = sqrt(pow(node.x - tree[i].x, 2) + pow(node.y - tree[i].y, 2));
+        if(distance < search_radius_)
+        {
+            near_neighbor_indices.push_back(i);
+        }
+    }
+    return near_neighbor_indices;
 }
 
 /// Returns the row major index for the map

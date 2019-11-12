@@ -32,9 +32,8 @@ local_lookahead_distance: 1.0 # in meters
 # Tolerance along the global plan while choosing points according to the lookahead distance
 local_trackpoint_tolerance: 0.1 # in meters
 
-# Local Map Size for Obstacle Inflation
-length_local_map: 4.0
-width_local_map: 4.0
+# Near search radius for a node in the RRT* tree
+search_radius: 0.3
 
 #######
 # Parameters for Car
