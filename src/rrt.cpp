@@ -89,6 +89,9 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     nh_.getParam("lookahead_distance", lookahead_distance_);
     nh_.getParam("local_lookahead_distance", local_lookahead_distance_);
 
+    // Local Map Parameters
+    nh_.getParam("inflation_radius", inflation_radius_);
+
     // RRT* Parameters
     nh_.getParam("enable_rrtstar", enable_rrtstar_);
     nh_.getParam("search_radius", search_radius_);
@@ -117,8 +120,8 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
     const auto translation = tf_laser_to_map_.transform.translation;
     const double yaw = tf::getYaw(tf_laser_to_map_.transform.rotation);
 
-    const auto start = static_cast<int>(scan_msg->ranges.size()/3);
-    const auto end = static_cast<int>(2*scan_msg->ranges.size()/3);
+    const auto start = static_cast<int>(scan_msg->ranges.size()/6);
+    const auto end = static_cast<int>(5*scan_msg->ranges.size()/6);
     const double angle_increment = scan_msg->angle_increment;
     double theta = scan_msg->angle_min + angle_increment*(start-1);
 
@@ -129,25 +132,33 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
         const double hit_range = scan_msg->ranges[i];
         if(std::isinf(hit_range) || std::isnan(hit_range)) continue;
 
+        // laser hit x, y in base_link frame
         const double x_base_link = hit_range*cos(theta);
         const double y_base_link = hit_range*sin(theta);
 
         if(x_base_link > 5 || y_base_link > 2) continue;
 
+        // laser hit x, y in base_link frame
         const double x_map = x_base_link*cos(yaw) - y_base_link*sin(yaw) + translation.x;
         const double y_map = x_base_link*sin(yaw) + y_base_link*cos(yaw) + translation.y;
 
-        const auto index = get_row_major_index(x_map, y_map);
+        std::vector<int> index_of_expanded_obstacles = get_expanded_row_major_indices(x_map, y_map);
 
-        if(input_map_.data[index] != 100)
+//        // row major index of x, y in the actual map
+//        const auto index = get_row_major_index(x_map, y_map);
+
+        for(const auto& index: index_of_expanded_obstacles)
         {
-            input_map_.data[index] = 100;
-            new_obstacles_.emplace_back(index);
+            if(input_map_.data[index] != 100)
+            {
+                input_map_.data[index] = 100;
+                new_obstacles_.emplace_back(index);
+            }
         }
     }
 
     clear_obstacles_count_++;
-    if(clear_obstacles_count_ > 10)
+    if(clear_obstacles_count_ > 20)
     {
         for(const auto index: new_obstacles_)
         {
@@ -480,6 +491,25 @@ int RRT::get_row_major_index(const double x_map, const double y_map)
     const auto x_index = static_cast<int>((x_map - input_map_.info.origin.position.x)/input_map_.info.resolution);
     const auto y_index = static_cast<int>((y_map - input_map_.info.origin.position.y)/input_map_.info.resolution);
     return y_index*map_cols_ + x_index;
+}
+
+/// Returns the row major indeices for the map of an inflated area around a point based on inflation radius
+/// @param x_map - x coordinates in map frame
+/// @param y_map - y coordinates in map frame
+/// @return row major index of the map
+std::vector<int> RRT::get_expanded_row_major_indices(const double x_map, const double y_map)
+{
+    std::vector<int> expanded_row_major_indices;
+    const auto x_index = static_cast<int>((x_map - input_map_.info.origin.position.x)/input_map_.info.resolution);
+    const auto y_index = static_cast<int>((y_map - input_map_.info.origin.position.y)/input_map_.info.resolution);
+    for(int i=-inflation_radius_+x_index; i<inflation_radius_+1+x_index; i++)
+    {
+        for(int j=-inflation_radius_+y_index; j<inflation_radius_+1+y_index; j++)
+        {
+            expanded_row_major_indices.emplace_back(j*map_cols_ + i);
+        }
+    }
+    return expanded_row_major_indices;
 }
 
 /// Returns the best way point from the global plan to track

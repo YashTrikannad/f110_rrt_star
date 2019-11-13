@@ -82,6 +82,7 @@ private:
     int map_cols_;
     std::vector<size_t > new_obstacles_;
     int clear_obstacles_count_;
+    int inflation_radius_;
 
     /// RRT Parameters
     int max_rrt_iters_;
@@ -202,6 +203,12 @@ private:
     /// @param y_map - y coordinates in map frame
     /// @return row major index of the map
     int get_row_major_index(double x, double y);
+
+    /// Returns the row major indeices for the map of an inflated area around a point based on inflation radius
+    /// @param x_map - x coordinates in map frame
+    /// @param y_map - y coordinates in map frame
+    /// @return row major index of the map
+    std::vector<int> get_expanded_row_major_indices(const double x_map, const double y_map);
 
     /// Path Tracking
 

@@ -1,11 +1,9 @@
 # Topics that RRT listens to
 pose_topic: "gt_pose"
 scan_topic: "scan"
-drive_topic: "nav"
 
 # Topics that RRT publishes to
-
-# visualization
+drive_topic: "nav"
 
 #######
 # Parameters for RRT
@@ -24,19 +22,22 @@ collision_checking_points: 10
 goal_tolerance: 0.1 # in meters
 
 # Lookahead Distance for tracking reference of local planner (RRT)
-lookahead_distance: 1.2 # in meters
+lookahead_distance: 2.0 # in meters
 
 # Lookahead Distance for tracking reference of local planner (RRT)
 local_lookahead_distance: 1.0 # in meters
 
 # Tolerance along the global plan while choosing points according to the lookahead distance
-local_trackpoint_tolerance: 0.01 # in meters
+local_trackpoint_tolerance: 0.05 # in meters
 
 # Near search radius for a node in the RRT* tree
 search_radius: 1.0
 
 # Enable RRT*
 enable_rrtstar: true
+
+# Obstacle Inflation
+inflation_radius: 5
 
 #######
 # Parameters for Car
