@@ -92,6 +92,9 @@ private:
     double lookahead_distance_;
     double local_lookahead_distance_;
 
+    /// RRT* Parameter
+    bool enable_rrtstar_;
+
     /// Car Parameters
     double high_speed_;
     double medium_speed_;
