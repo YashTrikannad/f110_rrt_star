@@ -34,6 +34,10 @@ struct Node
         x(x), y(y), cost(0.0), parent_index(parent_index)
     {}
 
+    Node(const double x, const double y, double cost, const int parent_index) :
+            x(x), y(y), cost(0.0), parent_index(parent_index)
+    {}
+
     double x;
     double y;
     double cost;

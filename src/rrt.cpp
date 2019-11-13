@@ -89,6 +89,9 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     nh_.getParam("lookahead_distance", lookahead_distance_);
     nh_.getParam("local_lookahead_distance", local_lookahead_distance_);
 
+    // RRT* Parameters
+    nh_.getParam("search_radius", search_radius_);
+
     // Car Parameters
     nh_.getParam("high_speed", high_speed_);
     nh_.getParam("medium_speed", medium_speed_);
@@ -143,7 +146,7 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
     }
 
     clear_obstacles_count_++;
-    if(clear_obstacles_count_ > 5)
+    if(clear_obstacles_count_ > 10)
     {
         for(const auto index: new_obstacles_)
         {
@@ -158,7 +161,91 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
     ROS_DEBUG("Map Updated");
 }
 
-/// The pose callback when subscribed to particle filter's inferred pose (RRT Main Loop)
+///// The pose callback when subscribed to particle filter's inferred pose (RRT Main Loop)
+///// @param pose_msg - pointer to the incoming pose message
+//void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
+//{
+//    current_x_ = pose_msg->pose.position.x;
+//    current_y_ = pose_msg->pose.position.y;
+//
+//    if(unique_id_ == 0)
+//    {
+//        visualize_waypoint_data();
+//    }
+//
+//    const auto trackpoint = get_best_global_trackpoint({pose_msg->pose.position.x,pose_msg->pose.position.y});
+//
+//    std::vector<Node> tree;
+//
+//    tree.emplace_back(Node(pose_msg->pose.position.x, pose_msg->pose.position.y, -1));
+//
+//    int count = 0;
+//    while(count < max_rrt_iters_)
+//    {
+//        count++;
+//
+//        // Sample a Node
+//        const auto sample_node = sample();
+//
+//        // Check if it is not occupied
+//        if(is_collided(sample_node[0], sample_node[1]))
+//        {
+//            ROS_DEBUG("Sample Node Colliding");
+//            continue;
+//        }
+//
+//        // Find the nearest node in the tree to the sample node
+//        const int nearest_node_id = nearest(tree, sample_node);
+//
+//        // Steer the tree from the nearest node towards the sample node
+//        const Node new_node = steer(tree[nearest_node_id], nearest_node_id, sample_node);
+//
+//        // Check if the segment joining the two nodes is in collision
+//        if(is_collided(tree[nearest_node_id], new_node))
+//        {
+//            ROS_DEBUG("Sample Node Edge Colliding");
+//            continue;
+//        }
+//        ROS_DEBUG("Sample Node Edge Found");
+//        if(is_goal(new_node, trackpoint[0], trackpoint[1]))
+//        {
+//            ROS_DEBUG("Goal reached. Backtracking ...");
+//            local_path_ = find_path(tree, new_node);
+//            ROS_INFO("Path Found");
+//
+//            const auto trackpoint_and_distance =
+//                    get_best_local_trackpoint({pose_msg->pose.position.x,pose_msg->pose.position.y});
+//
+//            const auto local_trackpoint = trackpoint_and_distance.first;
+//            const double distance = trackpoint_and_distance.second;
+//
+//            geometry_msgs::Pose goal_way_point;
+//            goal_way_point.position.x = local_trackpoint[0];
+//            goal_way_point.position.y = local_trackpoint[1];
+//            goal_way_point.position.z = 0;
+//            goal_way_point.orientation.x = 0;
+//            goal_way_point.orientation.y = 0;
+//            goal_way_point.orientation.z = 0;
+//            goal_way_point.orientation.w = 1;
+//
+//            geometry_msgs::Pose goal_way_point_car_frame;
+//            tf2::doTransform(goal_way_point, goal_way_point_car_frame, tf_map_to_laser_);
+//
+//            const double steering_angle = 2*(goal_way_point_car_frame.position.y)/pow(distance, 2);
+//
+//            publish_corrected_speed_and_steering(steering_angle);
+//
+//            visualize_trackpoints(goal_way_point.position.x, goal_way_point.position.y,
+//                                  trackpoint[0], trackpoint[1]);
+//
+//            break;
+//        }
+//
+//        tree.emplace_back(new_node);
+//    }
+//}
+
+/// The pose callback when subscribed to particle filter's inferred pose (RRT* Main Loop)
 /// @param pose_msg - pointer to the incoming pose message
 void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
 {
@@ -174,7 +261,7 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
 
     std::vector<Node> tree;
 
-    tree.emplace_back(Node(pose_msg->pose.position.x, pose_msg->pose.position.y, -1));
+    tree.emplace_back(Node(pose_msg->pose.position.x, pose_msg->pose.position.y, 0.0, -1));
 
     int count = 0;
     while(count < max_rrt_iters_)
@@ -195,7 +282,9 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
         const int nearest_node_id = nearest(tree, sample_node);
 
         // Steer the tree from the nearest node towards the sample node
-        const Node new_node = steer(tree[nearest_node_id], nearest_node_id, sample_node);
+        Node new_node = steer(tree[nearest_node_id], nearest_node_id, sample_node);
+
+        const auto current_node_index = tree.size();
 
         // Check if the segment joining the two nodes is in collision
         if(is_collided(tree[nearest_node_id], new_node))
@@ -203,12 +292,57 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
             ROS_DEBUG("Sample Node Edge Colliding");
             continue;
         }
+        else
+        {
+            new_node.cost = cost(tree, new_node);
+            const auto near_neighbour_indices = near(tree, new_node);
+
+            std::cout << "Near Neighbor size: " << near_neighbour_indices.size() << "\n";
+
+            std::vector<bool> is_near_neighbor_collided;
+            int best_neighbor = new_node.parent_index;
+
+            for(const int near_node_index: near_neighbour_indices)
+            {
+                if(is_collided(tree[near_node_index], new_node))
+                {
+                    is_near_neighbor_collided.push_back(true);
+                    continue;
+                }
+                is_near_neighbor_collided.push_back(false);
+
+                double cost = tree[near_node_index].cost + line_cost(tree[near_node_index], new_node);
+
+                if(cost < new_node.cost)
+                {
+                    new_node.cost = cost;
+                    new_node.parent_index = near_node_index;
+                    best_neighbor = near_node_index;
+                }
+            }
+
+            for(int i=0; i<near_neighbour_indices.size(); i++)
+            {
+                if(is_near_neighbor_collided[i] || i == best_neighbor)
+                {
+                    continue;
+                }
+                if(tree[near_neighbour_indices[i]].cost > new_node.cost + line_cost(
+                        new_node, tree[near_neighbour_indices[i]]))
+                {
+                    ROS_INFO("REWIRING");
+                    tree[near_neighbour_indices[i]].parent_index = current_node_index;
+                }
+            }
+        }
+        tree.emplace_back(new_node);
+
         ROS_DEBUG("Sample Node Edge Found");
         if(is_goal(new_node, trackpoint[0], trackpoint[1]))
         {
             ROS_DEBUG("Goal reached. Backtracking ...");
             local_path_ = find_path(tree, new_node);
-            ROS_INFO("Path Found");
+            ROS_DEBUG("Path Found");
 
             const auto trackpoint_and_distance =
                     get_best_local_trackpoint({pose_msg->pose.position.x,pose_msg->pose.position.y});
@@ -237,8 +371,6 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
 
             break;
         }
-
-        tree.emplace_back(new_node);
     }
 }
 
@@ -260,7 +392,7 @@ std::array<double, 2> RRT::sample()
     sample_point.orientation.y = 0;
     sample_point.orientation.z = 0;
     sample_point.orientation.w = 1;
-    tf2::doTransform(sample_point, sample_point, tf_laser_to_map_);\
+    tf2::doTransform(sample_point, sample_point, tf_laser_to_map_);
 
     return {sample_point.position.x, sample_point.position.y};
 }
@@ -390,9 +522,9 @@ bool RRT::is_collided(const double x_map, const double y_map)
 /// @param tree - the current tree
 /// @param node - the node the cost is calculated for
 /// @return - the cost value associated with the node
-double RRT::cost(const std::vector<Node> &tree, const Node &node)
+double RRT::cost(const std::vector<Node> &tree, const Node &new_node)
 {
-    return tree[node.parent_index].cost + ;
+    return tree[new_node.parent_index].cost + line_cost(tree[new_node.parent_index], new_node);
 }
 
 /// This method returns the cost of the straight line path between two nodes
