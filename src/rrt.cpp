@@ -121,7 +121,7 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
     const auto end = static_cast<int>(2*scan_msg->ranges.size()/3);
     const double angle_increment = scan_msg->angle_increment;
     double theta = scan_msg->angle_min + angle_increment*(start-1);
-    int Thresh = 10;	/////////// Threshold for obstacle inflation, add to params server
+    int Thresh = 10;	/////////// Threshold for obstacle inflation, add to params server ////////////////////////
 
     for(int i=start; i<end; ++i)
     {
