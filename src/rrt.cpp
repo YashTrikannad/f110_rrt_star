@@ -121,7 +121,7 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
     const auto end = static_cast<int>(2*scan_msg->ranges.size()/3);
     const double angle_increment = scan_msg->angle_increment;
     double theta = scan_msg->angle_min + angle_increment*(start-1);
-	double abc;
+	int Thresh = 10;	/////////// Threshold for obstacle inflation, add to params server
 
     for(int i=start; i<end; ++i)
     {
@@ -139,11 +139,24 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
         const double y_map = x_base_link*sin(yaw) + y_base_link*cos(yaw) + translation.y;
 
         const auto index = get_row_major_index(x_map, y_map);
+		 
 
         if(input_map_.data[index] != 100)
         {
             input_map_.data[index] = 100;
             new_obstacles_.emplace_back(index);
+			
+			//// INFLATION OF OBJECT
+			///////////////////////////////////////////////////////////////////////////////////////////////
+			for(int j=(index.x - Thresh); j < (index.x + Thresh); ++j){
+				for (int k=(index.y - Thresh); j < (index.x + Thresh); ++k)
+				{
+					input_map_.data[j,k] = 100;
+					new_obstacles_.emplace_back(index);
+				}
+				
+			}
+			///////////////////////////////////////////////////////////////////////////////////////////////
         }
     }
 
