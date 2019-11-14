@@ -1,7 +1,0 @@
-Levine Map without Obstacles:
-https://drive.google.com/open?id=1SdHQAsV9DkGBMOZeEQLJehDMsybNE90g
-
-
-Levine Map with Obstacles:
-https://drive.google.com/file/d/1wucdYzFfyjDBIht02JAPow2jRVWoMAy3/view?usp=sharing
-
