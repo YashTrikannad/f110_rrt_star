@@ -5,6 +5,9 @@ scan_topic: "scan"
 # Topics that RRT publishes to
 drive_topic: "nav"
 
+# Path for CSV file
+CSV_path: "/home/yasht/yasht_ws/src/f110_rrt_star/sensor_data/gtpose_fast.csv"
+
 #######
 # Parameters for RRT
 #######
