@@ -5,6 +5,9 @@ scan_topic: "scan"
 # Topics that RRT publishes to
 drive_topic: "nav"
 
+# Path for CSV file
+CSV_path: "/home/sonitabh/sonitabh_yadav_ws/src/vulcan_rrt_lab/sensor_data/gtpose_fast.csv"
+
 #######
 # Parameters for RRT
 #######
