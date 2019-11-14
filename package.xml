@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>f110_rrt</name>
+  <name>vulcan_rrt_lab</name>
   <version>0.0.0</version>
   <description>The rrt package</description>
 
