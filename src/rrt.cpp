@@ -16,10 +16,11 @@ static const bool debug = true;
 RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_listener_(tf_buffer_)
 {
     // ROS Topic Names
-    std::string pose_topic, scan_topic, drive_topic;
+    std::string pose_topic, scan_topic, drive_topic, CSV_path;
     nh_.getParam("pose_topic", pose_topic);
     nh_.getParam("scan_topic", scan_topic);
     nh_.getParam("drive_topic", drive_topic);
+    nh_.getParam("CSV_path", CSV_path);
 
     // Load Input Map from map_server
     input_map_  = *(ros::topic::waitForMessage<nav_msgs::OccupancyGrid>("map",ros::Duration(2)));
@@ -31,7 +32,7 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     ROS_INFO("Map Load Successful.");
 
     // Read Global Path
-    f110::CSVReader reader("/home/yash/yasht_ws/src/f110_rrt/sensor_data/gtpose_fast.csv");
+    f110::CSVReader reader(CSV_path);
     global_path_ = reader.getData();
 
     // get transform from laser to map
