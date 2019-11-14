@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>f110_rrt</name>
+  <name>f110_rrt_star</name>
   <version>0.0.0</version>
-  <description>The rrt package</description>
+  <description>The rrt star package for F110 Autonomous Car</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->
   <!-- <maintainer email="jane.doe@example.com">Jane Doe</maintainer> -->
-  <maintainer email="billyzheng@todo.todo">billyzheng</maintainer>
+  <maintainer email="yasht@seas.upenn.edu">Yash Trikannad</maintainer>
 
 
   <!-- One license tag required, multiple allowed, one license per tag -->

@@ -1,10 +1,10 @@
-// This file contains the class definition of RRT
+// This file contains implementations of all methods for RRT and RRT*
+// Author: Yash Trikannad
 
-#include "f110_rrt/rrt.h"
-#include "f110_rrt/csv_reader.h"
+#include "f110_rrt_star/rrt.h"
+#include "f110_rrt_star/csv_reader.h"
 
 #include <visualization_msgs/Marker.h>
-#include <visualization_msgs/MarkerArray.h>
 
 #include <thread>
 #include <chrono>
@@ -31,7 +31,7 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     ROS_INFO("Map Load Successful.");
 
     // Read Global Path
-    f110::CSVReader reader("/home/yash/yasht_ws/src/f110_rrt/sensor_data/gtpose_fast.csv");
+    f110::CSVReader reader("/home/yash/yasht_ws/src/f110_rrt_star/sensor_data/gtpose_fast.csv");
     global_path_ = reader.getData();
 
     // get transform from laser to map
@@ -52,7 +52,7 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     scan_sub_ = nh_.subscribe(scan_topic, 1, &RRT::scan_callback, this);
     sleep(1);
     pose_sub_ = nh_.subscribe(pose_topic, 1, &RRT::pose_callback, this);
-    drive_pub_ = nh_.advertise<ackermann_msgs::AckermannDriveStamped>(drive_topic, 10);
+    drive_pub_ = nh_.advertise<ackermann_msgs::AckermannDriveStamped>(drive_topic, 1);
     tree_viz_pub_ = nh_.advertise<visualization_msgs::Marker>("tree_viz_marker", 1);
 
     // Tree Visualization
@@ -85,7 +85,6 @@ RRT::RRT(ros::NodeHandle &nh): nh_(nh), gen((std::random_device())()), tf2_liste
     nh_.getParam("max_expansion_distance", max_expansion_distance_);
     nh_.getParam("collision_checking_points", collision_checking_points_);
     nh_.getParam("goal_tolerance", goal_tolerance_);
-    nh_.getParam("local_trackpoint_tolerance", local_trackpoint_tolerance_);
     nh_.getParam("lookahead_distance", lookahead_distance_);
     nh_.getParam("local_lookahead_distance", local_lookahead_distance_);
 
@@ -136,16 +135,13 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
         const double x_base_link = hit_range*cos(theta);
         const double y_base_link = hit_range*sin(theta);
 
-        if(x_base_link > 5 || y_base_link > 2) continue;
+        if(x_base_link > lookahead_distance_ || y_base_link > lookahead_distance_) continue;
 
         // laser hit x, y in base_link frame
         const double x_map = x_base_link*cos(yaw) - y_base_link*sin(yaw) + translation.x;
         const double y_map = x_base_link*sin(yaw) + y_base_link*cos(yaw) + translation.y;
 
         std::vector<int> index_of_expanded_obstacles = get_expanded_row_major_indices(x_map, y_map);
-
-//        // row major index of x, y in the actual map
-//        const auto index = get_row_major_index(x_map, y_map);
 
         for(const auto& index: index_of_expanded_obstacles)
         {
@@ -158,7 +154,7 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
     }
 
     clear_obstacles_count_++;
-    if(clear_obstacles_count_ > 20)
+    if(clear_obstacles_count_ > 10)
     {
         for(const auto index: new_obstacles_)
         {
@@ -166,11 +162,11 @@ void RRT::scan_callback(const sensor_msgs::LaserScan::ConstPtr &scan_msg)
         }
         new_obstacles_.clear();
         clear_obstacles_count_ = 0;
-        ROS_DEBUG("Obstacles Cleared");
+        ROS_INFO("Obstacles Cleared");
     }
 
     dynamic_map_pub_.publish(input_map_);
-    ROS_DEBUG("Map Updated");
+    ROS_INFO("Map Updated");
 }
 
 /// The pose callback when subscribed to particle filter's inferred pose (RRT* Main Loop)
@@ -305,8 +301,8 @@ void RRT::pose_callback(const geometry_msgs::PoseStamped::ConstPtr &pose_msg)
 /// @return - the sampled point in free space
 std::array<double, 2> RRT::sample()
 {
-    std::uniform_real_distribution<>::param_type x_param(0.3, 2.0);
-    std::uniform_real_distribution<>::param_type y_param(-1.5, 1.5);
+    std::uniform_real_distribution<>::param_type x_param(0, lookahead_distance_);
+    std::uniform_real_distribution<>::param_type y_param(-lookahead_distance_, lookahead_distance_);
     x_dist.param(x_param);
     y_dist.param(y_param);
 
@@ -580,12 +576,7 @@ std::pair<std::array<double, 2>, double> RRT::get_best_local_trackpoint(const st
             closest_distance = diff_distance;
             closest_point = trackpoint;
         }
-        if(diff_distance < local_trackpoint_tolerance_)
-        {
-            return {trackpoint, distance};
-        }
     }
-    ROS_WARN("No Local TrackPoint found within the local_trackpoint_tolerance. Approximated the Closest Point Available");
     return {closest_point, closest_distance_to_current_pose};
 }
 

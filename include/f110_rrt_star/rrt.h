@@ -1,5 +1,6 @@
 // This file contains the class definition of tree nodes and RRT
 // This library implements rrt star referenced in https://arxiv.org/pdf/1105.1186.pdf
+// Author : Yash Trikannad
 
 #include <ros/ros.h>
 #include <ros/package.h>
